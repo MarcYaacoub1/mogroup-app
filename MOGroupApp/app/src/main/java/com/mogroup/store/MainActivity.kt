@@ -6,6 +6,8 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -28,6 +30,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import java.util.Locale
+import kotlin.math.abs
 
 class MainActivity : AppCompatActivity() {
 
@@ -62,6 +65,7 @@ class MainActivity : AppCompatActivity() {
         setupWebView()
         setupSwipe()
         setupBackButton()
+        setupSwipePaging()
 
         findViewById<Button>(R.id.retryButton).setOnClickListener {
             hasError = false
@@ -190,6 +194,70 @@ class MainActivity : AppCompatActivity() {
                 if (webView.canGoBack()) webView.goBack() else finish()
             }
         })
+    }
+
+    /**
+     * Swipe left/right to go to the next/previous page of a product list.
+     * It only does something when the page has pagination, and it skips
+     * sliders, horizontally scrollable areas, and zoomed-in pages.
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupSwipePaging() {
+        val density = resources.displayMetrics.density
+        val minDistance = 110 * density   // lower = more sensitive
+        val minVelocity = 350 * density
+
+        val detector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean = true
+
+            override fun onFling(
+                e1: MotionEvent?,
+                e2: MotionEvent,
+                velocityX: Float,
+                velocityY: Float
+            ): Boolean {
+                if (e1 == null) return false
+                val dx = e2.x - e1.x
+                val dy = e2.y - e1.y
+                if (abs(dx) < minDistance || abs(dx) < abs(dy) * 2f || abs(velocityX) < minVelocity) {
+                    return false
+                }
+                val x = e1.x / density
+                val y = e1.y / density
+                val js = """
+                    (function(x,y,dx){
+                      try {
+                        if (window.visualViewport && window.visualViewport.scale > 1.05) return;
+                        var el = document.elementFromPoint(x,y);
+                        while (el && el !== document.body && el !== document.documentElement) {
+                          var cs = getComputedStyle(el);
+                          var cls = (typeof el.className === 'string') ? el.className : '';
+                          if ((el.scrollWidth > el.clientWidth + 5 && /(auto|scroll)/.test(cs.overflowX)) ||
+                              /(^|[\s_-])(carousel|swiper|slick|owl|slider)/i.test(cls)) return;
+                          el = el.parentElement;
+                        }
+                        var rtl = getComputedStyle(document.documentElement).direction === 'rtl';
+                        var next = rtl ? (dx > 0) : (dx < 0);
+                        var sel = next
+                          ? 'a.next.page-numbers, .woocommerce-pagination a.next, a[rel="next"]'
+                          : 'a.prev.page-numbers, .woocommerce-pagination a.prev, a[rel="prev"]';
+                        var a = document.querySelector(sel);
+                        if (a) { a.click(); return; }
+                        var l = document.querySelector(next ? 'link[rel="next"]' : 'link[rel="prev"]');
+                        if (l && l.href) { location.href = l.href; }
+                      } catch (err) {}
+                    })($x, $y, $dx);
+                """.trimIndent()
+                webView.evaluateJavascript(js, null)
+                return false
+            }
+        })
+
+        // Returns false so the WebView still handles scrolling/taps normally
+        webView.setOnTouchListener { _, event ->
+            detector.onTouchEvent(event)
+            false
+        }
     }
 
     // ----------------------------------------------------------- navigation
