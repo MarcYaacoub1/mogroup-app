@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Change this to your brand color -->
-    <color name="brand">#8B5E3C</color>
+    <color name="brand">#84945A</color>
     <color name="white">#FFFFFFFF</color>
     <color name="black">#FF111111</color>
     <color name="gray">#FF6B7280</color>
