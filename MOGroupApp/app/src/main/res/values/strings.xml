@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MO Group</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_shop">Shop</string>
+    <string name="nav_cart">Cart</string>
+    <string name="nav_account">Account</string>
+    <string name="nav_chat">WhatsApp</string>
+    <string name="error_title">No connection</string>
+    <string name="error_message">Check your internet connection and try again.</string>
+    <string name="retry">Try again</string>
+    <string name="no_app">No app found to open this link</string>
+</resources>

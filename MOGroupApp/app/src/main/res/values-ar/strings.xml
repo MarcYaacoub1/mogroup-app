@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MO Group</string>
+    <string name="nav_home">الرئيسية</string>
+    <string name="nav_shop">المتجر</string>
+    <string name="nav_cart">السلة</string>
+    <string name="nav_account">حسابي</string>
+    <string name="nav_chat">واتساب</string>
+    <string name="error_title">لا يوجد اتصال</string>
+    <string name="error_message">تأكد من اتصالك بالإنترنت وحاول مرة أخرى.</string>
+    <string name="retry">إعادة المحاولة</string>
+    <string name="no_app">لا يوجد تطبيق لفتح هذا الرابط</string>
+</resources>
