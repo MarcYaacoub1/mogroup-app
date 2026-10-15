@@ -134,6 +134,8 @@ class MainActivity : AppCompatActivity() {
                 swipe.isRefreshing = false
                 if (!hasError) errorView.visibility = View.GONE
                 CookieManager.getInstance().flush()
+                // Makes product carousels swipeable by touch
+                view.evaluateJavascript(CAROUSEL_SWIPE_JS, null)
             }
 
             override fun onReceivedError(
@@ -196,20 +198,17 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    // ------------------------------------------------------- swipe paging
+    // ------------------------------------------- swipe paging (product lists)
 
     /**
-     * Swipe right-to-left  -> next page of products
-     * Swipe left-to-right  -> previous page of products
-     *
-     * Works only on product list pages (the ones that show
-     * "Showing 1-12 of 257 results"). It does not need the page numbers
-     * to be visible. Sliders and zoomed-in pages are ignored.
+     * On product list pages (the ones that show "Showing 1-12 of 257 results"):
+     * swipe right-to-left  -> next page, swipe left-to-right -> previous page.
+     * Carousels, sliders and zoomed-in pages are ignored here.
      */
     @SuppressLint("ClickableViewAccessibility")
     private fun setupSwipePaging() {
         val density = resources.displayMetrics.density
-        val minDistance = 70 * density     // smaller = more sensitive
+        val minDistance = 70 * density
         val minVelocity = 250 * density
 
         val detector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
@@ -235,7 +234,6 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        // Returns false so the WebView still handles scrolling and taps normally
         webView.setOnTouchListener { _, event ->
             detector.onTouchEvent(event)
             false
@@ -293,7 +291,6 @@ class MainActivity : AppCompatActivity() {
         webView.loadUrl(buildPageUrl(current, target))
     }
 
-    /** /shop/ -> /shop/page/2/   (keeps filters and search in the query string) */
     private fun buildPageUrl(current: String, target: Int): String {
         val uri = Uri.parse(current)
         var path = uri.encodedPath ?: "/"
@@ -394,5 +391,93 @@ class MainActivity : AppCompatActivity() {
             "facebook.com", "instagram.com", "tiktok.com",
             "youtube.com", "youtu.be", "t.me", "x.com", "twitter.com"
         )
+
+        /**
+         * Injected into every page. When you swipe on a product carousel,
+         * it presses that carousel's next/previous arrow, unless the carousel
+         * already moved by itself (so it never moves twice).
+         */
+        private val CAROUSEL_SWIPE_JS = """
+            (function () {
+              if (window.__moSwipeInstalled) return;
+              window.__moSwipeInstalled = true;
+
+              var NEXT = '.wd-btn-arrow.wd-next, .wd-next, .owl-next, .swiper-button-next, .slick-next, .flickity-button.next';
+              var PREV = '.wd-btn-arrow.wd-prev, .wd-prev, .owl-prev, .swiper-button-prev, .slick-prev, .flickity-button.previous';
+              var TRACKS = '.swiper-wrapper, .owl-stage, .slick-track, .wd-carousel, .wd-carousel-wrap, .wd-carousel-inner';
+              var TABS = '.wd-nav, .wd-tabs-header, .wd-nav-tabs, [role="tablist"]';
+              var state = null;
+
+              function isVisible(a) {
+                if (!a || !a.getClientRects().length) return false;
+                var cs = getComputedStyle(a);
+                return cs.visibility !== 'hidden' && cs.display !== 'none';
+              }
+              function isDisabled(a) {
+                var c = (typeof a.className === 'string') ? a.className : '';
+                return /disabled/i.test(c) || a.getAttribute('aria-disabled') === 'true' || a.disabled === true;
+              }
+              function pick(root, sel) {
+                var list = root.querySelectorAll(sel);
+                for (var i = 0; i < list.length; i++) {
+                  if (isVisible(list[i])) return list[i];
+                }
+                return null;
+              }
+              function trackState() {
+                var list = document.querySelectorAll(TRACKS), out = [];
+                for (var i = 0; i < list.length; i++) {
+                  out.push([list[i], getComputedStyle(list[i]).transform + ':' + list[i].scrollLeft]);
+                }
+                return out;
+              }
+              function moved(root, before) {
+                for (var i = 0; i < before.length; i++) {
+                  var el = before[i][0];
+                  if (root.contains(el) && (getComputedStyle(el).transform + ':' + el.scrollLeft) !== before[i][1]) return true;
+                }
+                return false;
+              }
+              function findCarousel(start) {
+                var el = start;
+                while (el && el !== document.body && el !== document.documentElement) {
+                  if (el.nodeType === 1) {
+                    var cs = getComputedStyle(el);
+                    if (/(auto|scroll)/.test(cs.overflowX) && el.scrollWidth > el.clientWidth + 5) return null;
+                    if (el.matches(TABS)) return null;
+                    var n = pick(el, NEXT), p = pick(el, PREV);
+                    if (n || p) return { root: el, next: n, prev: p };
+                  }
+                  el = el.parentElement;
+                }
+                return null;
+              }
+
+              document.addEventListener('touchstart', function (e) {
+                state = null;
+                if (e.touches.length !== 1) return;
+                if (window.visualViewport && window.visualViewport.scale > 1.05) return;
+                var t = e.touches[0];
+                state = { x: t.clientX, y: t.clientY, target: e.target, before: trackState() };
+              }, { passive: true, capture: true });
+
+              document.addEventListener('touchend', function (e) {
+                var s = state; state = null;
+                if (!s || !e.changedTouches.length) return;
+                var t = e.changedTouches[0];
+                var dx = t.clientX - s.x, dy = t.clientY - s.y;
+                if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+                var f = findCarousel(s.target);
+                if (!f) return;
+                var rtl = getComputedStyle(document.documentElement).direction === 'rtl';
+                var forward = rtl ? dx > 0 : dx < 0;
+                setTimeout(function () {
+                  if (moved(f.root, s.before)) return;
+                  var arrow = forward ? f.next : f.prev;
+                  if (arrow && !isDisabled(arrow)) arrow.click();
+                }, 400);
+              }, { passive: true, capture: true });
+            })();
+        """.trimIndent()
     }
 }
