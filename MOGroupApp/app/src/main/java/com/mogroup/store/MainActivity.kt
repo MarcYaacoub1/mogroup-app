@@ -196,16 +196,21 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    // ------------------------------------------------------- swipe paging
+
     /**
-     * Swipe left/right to go to the next/previous page of a product list.
-     * It only does something when the page has pagination, and it skips
-     * sliders, horizontally scrollable areas, and zoomed-in pages.
+     * Swipe right-to-left  -> next page of products
+     * Swipe left-to-right  -> previous page of products
+     *
+     * Works only on product list pages (the ones that show
+     * "Showing 1-12 of 257 results"). It does not need the page numbers
+     * to be visible. Sliders and zoomed-in pages are ignored.
      */
     @SuppressLint("ClickableViewAccessibility")
     private fun setupSwipePaging() {
         val density = resources.displayMetrics.density
-        val minDistance = 110 * density   // lower = more sensitive
-        val minVelocity = 350 * density
+        val minDistance = 70 * density     // smaller = more sensitive
+        val minVelocity = 250 * density
 
         val detector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent): Boolean = true
@@ -219,45 +224,83 @@ class MainActivity : AppCompatActivity() {
                 if (e1 == null) return false
                 val dx = e2.x - e1.x
                 val dy = e2.y - e1.y
-                if (abs(dx) < minDistance || abs(dx) < abs(dy) * 2f || abs(velocityX) < minVelocity) {
+                if (abs(dx) < minDistance || abs(dx) < abs(dy) * 1.2f || abs(velocityX) < minVelocity) {
                     return false
                 }
-                val x = e1.x / density
-                val y = e1.y / density
-                val js = """
-                    (function(x,y,dx){
-                      try {
-                        if (window.visualViewport && window.visualViewport.scale > 1.05) return;
-                        var el = document.elementFromPoint(x,y);
-                        while (el && el !== document.body && el !== document.documentElement) {
-                          var cs = getComputedStyle(el);
-                          var cls = (typeof el.className === 'string') ? el.className : '';
-                          if ((el.scrollWidth > el.clientWidth + 5 && /(auto|scroll)/.test(cs.overflowX)) ||
-                              /(^|[\s_-])(carousel|swiper|slick|owl|slider)/i.test(cls)) return;
-                          el = el.parentElement;
-                        }
-                        var rtl = getComputedStyle(document.documentElement).direction === 'rtl';
-                        var next = rtl ? (dx > 0) : (dx < 0);
-                        var sel = next
-                          ? 'a.next.page-numbers, .woocommerce-pagination a.next, a[rel="next"]'
-                          : 'a.prev.page-numbers, .woocommerce-pagination a.prev, a[rel="prev"]';
-                        var a = document.querySelector(sel);
-                        if (a) { a.click(); return; }
-                        var l = document.querySelector(next ? 'link[rel="next"]' : 'link[rel="prev"]');
-                        if (l && l.href) { location.href = l.href; }
-                      } catch (err) {}
-                    })($x, $y, $dx);
-                """.trimIndent()
-                webView.evaluateJavascript(js, null)
+                val forward = dx < 0
+                val x = (e1.x / density).toInt()
+                val y = (e1.y / density).toInt()
+                webView.evaluateJavascript(probeScript(x, y)) { raw -> handlePaging(raw, forward) }
                 return false
             }
         })
 
-        // Returns false so the WebView still handles scrolling/taps normally
+        // Returns false so the WebView still handles scrolling and taps normally
         webView.setOnTouchListener { _, event ->
             detector.onTouchEvent(event)
             false
         }
+    }
+
+    /** Returns "start|end|total|hasNextLink|hasPrevLink", or "" if swiping is not allowed here. */
+    private fun probeScript(x: Int, y: Int): String = """
+        (function(x, y) {
+          try {
+            if (window.visualViewport && window.visualViewport.scale > 1.05) return '';
+            var el = document.elementFromPoint(x, y);
+            while (el && el !== document.body && el !== document.documentElement) {
+              var cs = getComputedStyle(el);
+              var cls = (typeof el.className === 'string') ? el.className : '';
+              if ((el.scrollWidth > el.clientWidth + 5 && /(auto|scroll)/.test(cs.overflowX)) ||
+                  /(^|[\s_-])(carousel|swiper|slick|owl|slider)/i.test(cls)) return '';
+              el = el.parentElement;
+            }
+            var rc = document.querySelector('.woocommerce-result-count');
+            var start = '', end = '', total = '';
+            if (rc) {
+              var t = rc.textContent
+                .replace(/[\u0660-\u0669]/g, function(d) { return d.charCodeAt(0) - 1632; })
+                .replace(/[,\u066C]/g, '');
+              var m = t.match(/(\d+)\D+(\d+)\D+(\d+)/);
+              if (m) { start = m[1]; end = m[2]; total = m[3]; }
+            }
+            var nextLink = document.querySelector('a.next.page-numbers, .woocommerce-pagination a.next, a[rel="next"], link[rel="next"]') ? '1' : '0';
+            var prevLink = document.querySelector('a.prev.page-numbers, .woocommerce-pagination a.prev, a[rel="prev"], link[rel="prev"]') ? '1' : '0';
+            if (!rc && nextLink === '0' && prevLink === '0') return '';
+            return start + '|' + end + '|' + total + '|' + nextLink + '|' + prevLink;
+          } catch (err) { return ''; }
+        })($x, $y)
+    """.trimIndent()
+
+    private fun handlePaging(raw: String?, forward: Boolean) {
+        val s = raw?.trim('"') ?: return
+        if (s.isEmpty() || s == "null") return
+        val p = s.split("|")
+        if (p.size < 5) return
+
+        val start = p[0].toIntOrNull()
+        val end = p[1].toIntOrNull()
+        val total = p[2].toIntOrNull()
+        val canNext = if (end != null && total != null) end < total else p[3] == "1"
+        val canPrev = if (start != null) start > 1 else p[4] == "1"
+        if (forward && !canNext) return
+        if (!forward && !canPrev) return
+
+        val current = webView.url ?: return
+        val page = Regex("/page/(\\d+)").find(current)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+        val target = if (forward) page + 1 else page - 1
+        if (target < 1) return
+        webView.loadUrl(buildPageUrl(current, target))
+    }
+
+    /** /shop/ -> /shop/page/2/   (keeps filters and search in the query string) */
+    private fun buildPageUrl(current: String, target: Int): String {
+        val uri = Uri.parse(current)
+        var path = uri.encodedPath ?: "/"
+        path = path.replace(Regex("/page/\\d+/?$"), "/")
+        if (!path.endsWith("/")) path += "/"
+        if (target > 1) path += "page/$target/"
+        return uri.buildUpon().encodedPath(path).build().toString()
     }
 
     // ----------------------------------------------------------- navigation
