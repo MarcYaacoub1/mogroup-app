@@ -26,7 +26,6 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import java.util.Locale
 
@@ -36,11 +35,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var swipe: SwipeRefreshLayout
     private lateinit var progress: LinearProgressIndicator
     private lateinit var errorView: View
-    private lateinit var bottomNav: BottomNavigationView
 
     private var hasError = false
     private var failedUrl: String? = null
-    private var syncingNav = false
     private var fileCallback: ValueCallback<Array<Uri>>? = null
 
     private val fileChooserLauncher =
@@ -60,12 +57,10 @@ class MainActivity : AppCompatActivity() {
         swipe = findViewById(R.id.swipe)
         progress = findViewById(R.id.progress)
         errorView = findViewById(R.id.errorView)
-        bottomNav = findViewById(R.id.bottomNav)
 
         setupInsets()
         setupWebView()
         setupSwipe()
-        setupBottomNav()
         setupBackButton()
 
         findViewById<Button>(R.id.retryButton).setOnClickListener {
@@ -95,8 +90,6 @@ class MainActivity : AppCompatActivity() {
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
             val imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
             v.setPadding(bars.left, bars.top, bars.right, if (imeVisible) ime.bottom else bars.bottom)
-            // Hide the bottom bar while the keyboard is open
-            bottomNav.visibility = if (imeVisible) View.GONE else View.VISIBLE
             WindowInsetsCompat.CONSUMED
         }
     }
@@ -137,10 +130,6 @@ class MainActivity : AppCompatActivity() {
                 swipe.isRefreshing = false
                 if (!hasError) errorView.visibility = View.GONE
                 CookieManager.getInstance().flush()
-            }
-
-            override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
-                syncNav(url)
             }
 
             override fun onReceivedError(
@@ -184,7 +173,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupSwipe() {
         swipe.setColorSchemeResources(R.color.brand)
-        // Only allow pull-to-refresh when the page is scrolled to the very top
         swipe.setOnChildScrollUpCallback { _, _ -> webView.scrollY > 0 }
         swipe.setOnRefreshListener {
             if (hasError) {
@@ -196,77 +184,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupBottomNav() {
-        bottomNav.setOnItemSelectedListener { item ->
-            if (syncingNav) return@setOnItemSelectedListener true
-            navigateTo(item.itemId)
-        }
-        bottomNav.setOnItemReselectedListener { item ->
-            if (item.itemId == R.id.nav_chat) {
-                openExternal(Uri.parse(WHATSAPP))
-            } else {
-                navigateTo(item.itemId)
-            }
-        }
-    }
-
     private fun setupBackButton() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (errorView.visibility == View.VISIBLE && !webView.canGoBack()) {
-                    finish()
-                } else if (webView.canGoBack()) {
-                    webView.goBack()
-                } else {
-                    finish()
-                }
+                if (webView.canGoBack()) webView.goBack() else finish()
             }
         })
     }
 
     // ----------------------------------------------------------- navigation
 
-    /** Returns true if the tab should stay selected. */
-    private fun navigateTo(itemId: Int): Boolean {
-        when (itemId) {
-            R.id.nav_home -> webView.loadUrl(homeUrl())
-            R.id.nav_shop -> webView.loadUrl(SHOP)
-            R.id.nav_cart -> webView.loadUrl(CART)
-            R.id.nav_account -> webView.loadUrl(ACCOUNT)
-            R.id.nav_chat -> {
-                openExternal(Uri.parse(WHATSAPP))
-                return false
-            }
-        }
-        return true
-    }
-
-    private fun syncNav(url: String?) {
-        if (url == null) return
-        val id = when {
-            "/cart" in url || "/checkout" in url -> R.id.nav_cart
-            "/my-account" in url -> R.id.nav_account
-            "/shop" in url || "/product-category" in url || "/product/" in url -> R.id.nav_shop
-            else -> R.id.nav_home
-        }
-        if (bottomNav.selectedItemId != id) {
-            syncingNav = true
-            bottomNav.selectedItemId = id
-            syncingNav = false
-        }
-    }
-
     private fun defaultHome(): String =
         if (Locale.getDefault().language == "ar") HOME_AR else HOME
-
-    private fun homeUrl(): String {
-        val current = webView.url
-        return when {
-            current != null && current.startsWith(HOME_AR) -> HOME_AR
-            current != null && current.startsWith(HOME) -> HOME
-            else -> defaultHome()
-        }
-    }
 
     private fun loadFromIntent(intent: Intent?) {
         val data = intent?.data
@@ -280,13 +209,6 @@ class MainActivity : AppCompatActivity() {
             (host == SITE_HOST || host == "www.$SITE_HOST")
     }
 
-    /**
-     * Decides whether the WebView loads a URL itself (return false)
-     * or we hand it to another app (return true).
-     *
-     * All normal http(s) links stay inside the app so that payment gateways
-     * and their redirects keep working. Only social / WhatsApp links leave.
-     */
     private fun handleUrl(uri: Uri): Boolean {
         val scheme = uri.scheme?.lowercase()
         return when (scheme) {
@@ -312,7 +234,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 true
             }
-            else -> { // tel:, mailto:, sms:, geo:, whatsapp: ...
+            else -> {
                 openExternal(uri)
                 true
             }
@@ -355,10 +277,6 @@ class MainActivity : AppCompatActivity() {
         private const val SITE_HOST = "mogroup-comp.com"
         private const val HOME = "https://mogroup-comp.com/"
         private const val HOME_AR = "https://mogroup-comp.com/ar/"
-        private const val SHOP = "https://mogroup-comp.com/shop/"
-        private const val CART = "https://mogroup-comp.com/cart/"
-        private const val ACCOUNT = "https://mogroup-comp.com/my-account/"
-        private const val WHATSAPP = "https://wa.me/201508885989"
 
         private val EXTERNAL_HOSTS = listOf(
             "wa.me", "api.whatsapp.com", "web.whatsapp.com", "whatsapp.com",
