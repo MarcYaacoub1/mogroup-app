@@ -11,6 +11,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.JsResult
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -20,8 +21,6 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.Toast
-import android.webkit.JsResult
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,6 +29,7 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import java.util.Locale
 import kotlin.math.abs
@@ -158,6 +158,44 @@ class MainActivity : AppCompatActivity() {
             override fun onProgressChanged(view: WebView, newProgress: Int) {
                 progress.setProgressCompat(newProgress, true)
                 progress.visibility = if (newProgress < 100) View.VISIBLE else View.INVISIBLE
+            }
+
+            // Shows the site's alert() with the message only (no "The page at ... says" title)
+            override fun onJsAlert(
+                view: WebView,
+                url: String?,
+                message: String?,
+                result: JsResult
+            ): Boolean {
+                if (isFinishing || isDestroyed) {
+                    result.cancel()
+                    return true
+                }
+                MaterialAlertDialogBuilder(this@MainActivity)
+                    .setMessage(message)
+                    .setPositiveButton(android.R.string.ok) { _, _ -> result.confirm() }
+                    .setOnCancelListener { result.cancel() }
+                    .show()
+                return true
+            }
+
+            override fun onJsConfirm(
+                view: WebView,
+                url: String?,
+                message: String?,
+                result: JsResult
+            ): Boolean {
+                if (isFinishing || isDestroyed) {
+                    result.cancel()
+                    return true
+                }
+                MaterialAlertDialogBuilder(this@MainActivity)
+                    .setMessage(message)
+                    .setPositiveButton(android.R.string.ok) { _, _ -> result.confirm() }
+                    .setNegativeButton(android.R.string.cancel) { _, _ -> result.cancel() }
+                    .setOnCancelListener { result.cancel() }
+                    .show()
+                return true
             }
 
             override fun onShowFileChooser(
