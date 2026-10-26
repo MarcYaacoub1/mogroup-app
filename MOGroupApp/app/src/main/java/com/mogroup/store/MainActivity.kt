@@ -20,6 +20,8 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.Toast
+import android.webkit.JsResult
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
