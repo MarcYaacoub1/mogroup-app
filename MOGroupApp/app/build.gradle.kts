@@ -1,3 +1,4 @@
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -18,7 +19,8 @@ android {
     signingConfigs {
         create("release") {
             val keystorePath = System.getenv("KEYSTORE_PATH")
-            if (keystorePath != null) {
+
+            if (!keystorePath.isNullOrBlank()) {
                 storeFile = file(keystorePath)
                 storePassword = System.getenv("KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("KEY_ALIAS")
@@ -31,12 +33,13 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Sign only when the keystore is provided (GitHub Actions); local builds still work
-            if (System.getenv("KEYSTORE_PATH") != null) {
+
+            if (!System.getenv("KEYSTORE_PATH").isNullOrBlank()) {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
@@ -46,6 +49,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
     kotlinOptions {
         jvmTarget = "17"
     }
